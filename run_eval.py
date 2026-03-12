@@ -6,7 +6,8 @@ runs your agent, and checks the answer locally.
 Stops at the first failure.
 
 Usage:
-    python run_eval.py
+    uv run run_eval.py           # all questions, stop at first fail
+    uv run run_eval.py --index 5 # single question (for debugging)
 
 Reads from .env (same credentials as the autochecker):
     AUTOCHECKER_API_URL  — e.g. https://auche.namaz.live
@@ -14,6 +15,7 @@ Reads from .env (same credentials as the autochecker):
     AUTOCHECKER_PASSWORD — your GitHub username + Telegram alias
 """
 
+import argparse
 import base64
 import json
 import os
@@ -121,29 +123,29 @@ def _run_agent(question: str, timeout: int = 60):
 # Matching logic (mirrors autochecker evaluation)
 # ---------------------------------------------------------------------------
 
-def _match(answer: str, expected: dict) -> bool:
-    """Check if the answer satisfies the expected matching rule."""
-    answer_lower = answer.lower()
+def _match(text: str, rule: dict) -> bool:
+    """Check if text satisfies the matching rule."""
+    text_lower = text.lower()
 
-    if "contains" in expected:
-        return expected["contains"].lower() in answer_lower
+    if "contains" in rule:
+        return rule["contains"].lower() in text_lower
 
-    if "contains_all" in expected:
-        return all(kw.lower() in answer_lower for kw in expected["contains_all"])
+    if "contains_all" in rule:
+        return all(kw.lower() in text_lower for kw in rule["contains_all"])
 
-    if "any_of" in expected:
-        return any(kw.lower() in answer_lower for kw in expected["any_of"])
+    if "any_of" in rule:
+        return any(kw.lower() in text_lower for kw in rule["any_of"])
 
-    if "regex" in expected:
-        return bool(re.search(expected["regex"], answer, re.IGNORECASE))
+    if "regex" in rule:
+        return bool(re.search(rule["regex"], text, re.IGNORECASE))
 
-    if "numeric_gt" in expected:
-        numbers = re.findall(r"[\d.]+", answer)
-        return any(float(n) > expected["numeric_gt"] for n in numbers if n)
+    if "numeric_gt" in rule:
+        numbers = re.findall(r"[\d.]+", text)
+        return any(float(n) > rule["numeric_gt"] for n in numbers if n)
 
-    if "numeric_range" in expected:
-        lo, hi = expected["numeric_range"]
-        numbers = re.findall(r"[\d.]+", answer)
+    if "numeric_range" in rule:
+        lo, hi = rule["numeric_range"]
+        numbers = re.findall(r"[\d.]+", text)
         return any(lo <= float(n) <= hi for n in numbers if n)
 
     return False
@@ -172,17 +174,92 @@ def _format_expected(expected: dict) -> str:
 
 GREEN = "\033[92m"
 RED = "\033[91m"
+YELLOW = "\033[93m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
 LAB = "lab-06"
 
 
+def _check_question(q: dict, data: dict) -> tuple[bool, str]:
+    """Check agent output against question expectations.
+
+    Returns (passed, failure_reason). failure_reason is empty on pass.
+    """
+    answer = data.get("answer", "")
+    expected = q["expected"]
+
+    if not _match(answer, expected):
+        feedback = q.get("feedback")
+        if feedback:
+            return False, f"    {YELLOW}hint: {feedback}{RESET}"
+        else:
+            return False, f"    Expected: {_format_expected(expected)}"
+
+    # Check source if expected_source is defined
+    expected_source = q.get("expected_source")
+    if expected_source:
+        source = data.get("source", "")
+        if not source:
+            return False, f"    Missing 'source' field (expected a file reference)"
+        if not _match(source, expected_source):
+            feedback = q.get("feedback")
+            if feedback:
+                return False, f"    {YELLOW}hint: {feedback}{RESET}"
+            else:
+                return False, f"    Source '{source}' doesn't match expected"
+
+    return True, ""
+
+
 def main():
+    parser = argparse.ArgumentParser(description="Run agent evaluation benchmark")
+    parser.add_argument(
+        "--index", type=int, default=None,
+        help="Run a single question by index (for debugging)"
+    )
+    args = parser.parse_args()
+
     _load_env()
     api_url, email, password = _get_credentials()
     auth = _basic_auth_header(email, password)
 
+    if args.index is not None:
+        # Single question mode
+        q = _fetch_question(api_url, auth, LAB, args.index)
+        if q is None:
+            print(f"Question {args.index} not found", file=sys.stderr)
+            sys.exit(1)
+
+        question = q["question"]
+        print(f"  [{args.index}] {question}")
+
+        data, error = _run_agent(question)
+        if error:
+            print(f"  {RED}Error: {error}{RESET}")
+            sys.exit(1)
+
+        passed, reason = _check_question(q, data)
+        answer = data.get("answer", "")
+        source = data.get("source", "")
+        tool_calls = data.get("tool_calls", [])
+
+        print(f"  Answer: {answer[:200]}")
+        if source:
+            print(f"  Source: {source}")
+        if tool_calls:
+            tools_used = [tc.get("tool", "?") for tc in tool_calls]
+            print(f"  Tools: {', '.join(tools_used)}")
+
+        if passed:
+            print(f"  {GREEN}PASSED{RESET}")
+        else:
+            print(f"  {RED}FAILED{RESET}")
+            print(reason)
+            sys.exit(1)
+        return
+
+    # Full run mode — stop at first failure
     index = 0
     passed = 0
 
@@ -195,7 +272,6 @@ def main():
 
         total = q["total"]
         question = q["question"]
-        expected = q["expected"]
 
         # Run the agent
         data, error = _run_agent(question)
@@ -206,16 +282,17 @@ def main():
             print(f"\n{BOLD}{passed}/{total} passed{RESET}")
             sys.exit(1)
 
-        answer = data.get("answer", "")
+        ok, reason = _check_question(q, data)
 
-        if _match(answer, expected):
+        if ok:
             print(f"  {GREEN}+ [{index + 1}/{total}] {question}{RESET}")
             passed += 1
             index += 1
         else:
+            answer = data.get("answer", "")
             print(f"\n  {RED}x [{index + 1}/{total}] {question}{RESET}")
             print(f"    Your answer: {answer[:200]}")
-            print(f"    Expected: {_format_expected(expected)}")
+            print(reason)
             print(f"\n{BOLD}{passed}/{total} passed{RESET}")
             sys.exit(1)
 

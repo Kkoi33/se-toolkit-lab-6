@@ -16,9 +16,28 @@ The lab gets updated regularly, so do [sync your fork with the upstream](https:/
 
 > "Everybody should implement an agent loop at some point. It's the hello-world of agentic engineering."
 
-You've used AI agents throughout the course — now you'll build one from scratch.
+You will build a CLI agent that can answer questions by reading the lab docs, connecting to your VM backend. You then will evaluate the agents against a benchmark.
 
-You have a running Learning Management Service — a backend, a database, and a frontend dashboard. You'll build a **CLI agent** that answers questions about the course and about your own system, and then evaluate the agent against a benchmark.
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Your VM                                                     │
+│                                                              │
+│  ┌──────────────┐     ┌──────────────────────────────────┐   │
+│  │  agent.py    │────▶│  OpenRouter API                  │   │
+│  │  (CLI)       │◀────│  (a free LLM with tool use)      │   │
+│  └──────┬───────┘     └──────────────────────────────────┘   │
+│         │                                                    │
+│         │ tool calls                                         │
+│         ├──────────▶ read_file(path) ──▶ source code, wiki/  │
+│         ├──────────▶ list_files(dir)  ──▶ files and folders  │
+│         ├──────────▶ query_api(path)  ──▶ localhost:42002    │
+│         │                                                    │
+│  ┌──────┴───────┐                                            │
+│  │  Docker      │  app (FastAPI) ─── postgres (data)         │
+│  │  Compose     │  caddy (frontend)                          │
+│  └──────────────┘                                            │
+└──────────────────────────────────────────────────────────────┘
+```
 
 ## Learning advice
 
@@ -30,9 +49,7 @@ This lab is different from previous ones. You are not following step-by-step ins
 
 > My agent failed this question: "...". Diagnose why and suggest a fix.
 
-The agent you build is simple (~100-200 lines). The learning comes from debugging it against the benchmark — each failure teaches you something about agents or course material.
-
-You need a coding agent that has access to the whole repo to work effectively.
+The agent you build is simple (~100-200 lines). The learning comes from debugging it against the benchmark.
 
 ## Learning outcomes
 
@@ -62,8 +79,8 @@ In simple words, you should be able to say:
 ### Required
 
 1. [Call an LLM from code](./lab/tasks/required/task-1.md#call-an-llm-from-code)
-2. [Add tools](./lab/tasks/required/task-2.md#add-tools)
-3. [Pass the benchmark](./lab/tasks/required/task-3.md#pass-the-benchmark)
+2. [The documentation agent](./lab/tasks/required/task-2.md#the-documentation-agent)
+3. [The system agent](./lab/tasks/required/task-3.md#the-system-agent)
 
 ### Optional (recommended)
 

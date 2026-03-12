@@ -1,67 +1,69 @@
-# Pass the Benchmark
+# The System Agent
 
-Iterate on your agent until it passes the evaluation benchmark.
+In Task 2 you built an agent that reads documentation. But documentation can be outdated — the real system is the source of truth. In this task you will give your agent a new tool (`query_api`) so it can talk to your deployed backend, and teach it to answer two new kinds of questions: static system facts (framework, ports, status codes) and data-dependent queries (item count, scores).
 
-## [Git workflow](../../../wiki/git-workflow.md)
+## What you will add
 
-1. Create an issue titled `[Task] Pass the Benchmark`.
-2. Pull latest `main` from `origin` and `upstream`.
-3. Create a branch from `main` (e.g., `task/pass-the-benchmark`).
-4. Work on the branch. Commit as you go using [conventional commits](https://www.conventionalcommits.org/) (e.g., `feat:`, `docs:`, `test:`).
-5. Push, create a PR to `main` in **your fork** (not upstream). Link the issue using a keyword (e.g., `Closes #3`).
-6. Get a review from your partner, merge (this closes the issue automatically), delete the branch.
+You will add a `query_api` tool to the agent you built in Task 2. The agentic loop stays the same — you are just adding one more tool the LLM can call. The agent can now send requests to your deployed backend in addition to reading files.
 
-## What you will do
+## CLI interface
 
-Run the evaluation benchmark, examine failures, fix your agent, and repeat. The benchmark tests your agent with questions about the course material and your deployed system.
-
-You cannot see the questions upfront — you discover them by running the eval. Each failed question shows you what went wrong. Fix it, re-run, and move on to the next one.
-
-```
-run eval → see failure → diagnose → fix agent → re-run → next failure → ...
-```
-
-## How to run the benchmark
-
-Run `run_eval.py` from the project root:
+Same rules as Task 2. The only change: `source` is now optional (system questions may not have a wiki source).
 
 ```bash
-python run_eval.py
+uv run agent.py "How many items are in the database?"
 ```
 
-It reads your autochecker credentials from `.env` / `.env.docker.secret` (`AUTOCHECKER_API_URL`, `AUTOCHECKER_EMAIL`, `AUTOCHECKER_PASSWORD`) — same ones you configured during setup.
-
-The script:
-
-1. Fetches one question at a time from the autochecker API.
-2. Runs `python agent.py "question"` locally.
-3. Checks the answer against the expected result.
-4. On pass: prints green, moves to the next question.
-5. On fail: prints red with feedback, stops.
-
-```
-  + [1/25] A teammate pushes broken code directly to main...
-  + [2/25] You see a commit message that just says 'fix'...
-  + [3/25] Your teammate and you both edited the same line...
-
-  x [4/25] You change your Python code and run 'docker compose up -d'...
-    Your answer: restart the container
-    Expected: answer should contain any of: ["--build", "build", ...]
-
-3/25 passed
+```json
+{
+  "answer": "There are 120 items in the database.",
+  "tool_calls": [
+    {"tool": "query_api", "args": {"method": "GET", "path": "/items/"}, "result": "{\"status_code\": 200, ...}"}
+  ]
+}
 ```
 
-Fix the failing question, then run `python run_eval.py` again.
+## New tool: `query_api`
 
-> **Note:** The autochecker bot tests your agent with additional questions not present in `run_eval.py`. You need a genuinely working agent — not hard-coded answers.
+Call your deployed backend API. Register it as a function-calling schema alongside your existing tools.
 
-## Debugging workflow
+- **Parameters:** `method` (string — GET, POST, etc.), `path` (string — e.g., `/items/`), `body` (string, optional — JSON request body).
+- **Returns:** JSON string with `status_code` and `body`.
+- **Authentication:** use `LMS_API_KEY` from `.env.docker.secret` (the backend key, not the LLM key).
 
-When a question fails, diagnose the root cause:
+Update your system prompt so the LLM knows when to use wiki tools vs `query_api` vs `read_file` on source code.
+
+> **Note:** Two distinct keys: `LMS_API_KEY` (in `.env.docker.secret`) protects your backend endpoints. `LLM_API_KEY` (in `.env.agent.secret`) authenticates with your LLM provider. Don't mix them up.
+
+## Pass the benchmark
+
+Once `query_api` works, run the evaluation benchmark and iterate until your agent passes.
+
+```bash
+uv run run_eval.py
+```
+
+The script fetches questions from the autochecker API, runs your agent on each one, and checks the answer. On failure it shows a feedback hint.
+
+```
+  ✓ [1/26] How do you resolve a merge conflict?
+  ✓ [2/26] What is a Docker volume used for?
+  ✓ [3/26] What framework does the backend use?
+
+  ✗ [4/26] You change your Python code and run 'docker compose up -d'...
+    feedback: Think about when Docker rebuilds the image vs reuses the old one.
+
+3/26 passed
+```
+
+Fix the failing question, re-run, move on to the next one.
+
+> **Note:** The autochecker bot tests your agent with additional hidden questions not present in `run_eval.py`. These include multi-step challenges that require chaining tools. You need a genuinely working agent — not hard-coded answers.
+
+### Debugging workflow
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| Wrong factual answer | System prompt missing this topic | Add the topic to your system prompt |
 | Agent doesn't use a tool when it should | Tool description too vague for the LLM | Improve the tool's description in the schema |
 | Tool called but returns an error | Bug in tool implementation | Fix the tool code, test it in isolation |
 | Tool called with wrong arguments | LLM misunderstands the schema | Clarify parameter descriptions |
@@ -72,72 +74,41 @@ When a question fails, diagnose the root cause:
 
 ### 1. Plan (`plans/task-3.md`)
 
-Before iterating, create `plans/task-3.md`. Run the benchmark once and document:
+Before writing code, create `plans/task-3.md`. Describe how you will define the `query_api` tool schema, handle authentication, and update the system prompt.
 
-- Your current score (e.g., "12/25 passed").
-- The first few failures and your diagnosis of each.
-- Your strategy for improving the agent.
+After running the benchmark once, add your initial score, first failures, and iteration strategy.
 
-Commit:
+### 2. Tool and agent updates (update `agent.py`)
 
-```text
-docs: add benchmark iteration plan
-```
-
-### 2. Agent improvements (update `agent.py`)
-
-Iterate on your agent until `run_eval.py` passes all 25 questions. Common improvements:
-
-- Expand or refine the system prompt.
-- Improve tool descriptions so the LLM calls the right tool.
-- Fix tool implementations (path handling, error cases, response parsing).
-- Handle edge cases (empty responses, timeout, malformed data).
-
-Commit as you go. Example:
-
-```text
-fix: improve system prompt for Docker questions
-fix: handle empty file in read_file tool
-feat: add retry logic for LLM API rate limits
-```
+Add `query_api` as a function-calling schema, implement it with authentication, and update the system prompt. Then iterate until the benchmark passes.
 
 ### 3. Documentation (update `AGENT.md`)
 
-Update `AGENT.md` with:
+Update `AGENT.md` to document the `query_api` tool, its authentication, how the LLM decides between wiki and system tools, lessons learned from the benchmark, and your final eval score. At least 200 words.
 
-- **Final architecture**: any changes made during iteration.
-- **Lessons learned**: what failed and why, what you changed.
-- **Eval score**: your final `run_eval.py` result.
+### 4. Tests (5 more tests)
 
-Commit:
+Add 5 regression tests for system agent tools. Example questions:
 
-```text
-docs: update agent documentation with benchmark results
-```
-
-### 4. Tests
-
-Update your regression tests to cover any new edge cases you discovered during iteration.
-
-Commit:
-
-```text
-test: update regression tests with benchmark edge cases
-```
+- `"What framework does the backend use?"` → expects `read_file` in tool_calls.
+- `"How many items are in the database?"` → expects `query_api` in tool_calls.
 
 ### 5. Deployment
 
-Deploy the final agent to your VM. The autochecker bot will run the full benchmark (25 shared questions + 9 additional questions = 34 total).
+Deploy the final agent to your VM. Make sure both `.env.agent.secret` (LLM key) and `.env.docker.secret` (backend API key) are configured.
 
-You need at least **75%** (26/34) to pass.
+The autochecker bot will run the full benchmark including hidden questions. You need at least **75%** to pass.
 
 ## Acceptance criteria
 
-- [ ] Issue has the correct title.
-- [ ] `plans/task-3.md` exists with the initial diagnosis and strategy.
-- [ ] `run_eval.py` passes all 25 questions locally.
-- [ ] `AGENT.md` documents the final architecture and lessons learned.
-- [ ] Regression tests are updated.
+- [ ] `plans/task-3.md` exists with the implementation plan and benchmark diagnosis.
+- [ ] `agent.py` defines `query_api` as a function-calling schema.
+- [ ] `query_api` authenticates with `LMS_API_KEY`.
+- [ ] The agent answers static system questions correctly (framework, ports, status codes).
+- [ ] The agent answers data-dependent questions with plausible values.
+- [ ] `run_eval.py` passes all local questions.
+- [ ] `AGENT.md` documents the final architecture and lessons learned (at least 200 words).
+- [ ] 5 tool-calling regression tests exist and pass.
+- [ ] The agent works on the VM via SSH.
 - [ ] The agent passes the autochecker bot benchmark (≥75%).
-- [ ] PR is approved and merged.
-- [ ] Issue is closed by the PR.
+- [ ] [Git workflow](../../../wiki/git-workflow.md): issue `[Task] The System Agent`, branch, PR with `Closes #...`, partner approval, merge.
