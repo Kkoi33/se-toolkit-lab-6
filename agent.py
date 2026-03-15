@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Agent CLI — connects to an LLM and answers questions.
+Agent CLI — connects to an LLM and answers questions using tools.
 
 Usage:
     uv run agent.py "Your question here"
 
 Output:
-    JSON to stdout: {"answer": "...", "tool_calls": []}
+    JSON to stdout: {"answer": "...", "source": "...", "tool_calls": [...]}
     All debug/progress output goes to stderr.
 """
 
@@ -28,6 +28,72 @@ LLM_API_KEY = os.getenv("LLM_API_KEY")
 LLM_API_BASE = os.getenv("LLM_API_BASE")
 LLM_MODEL = os.getenv("LLM_MODEL", "qwen3-coder-plus")
 
+# Project root for file operations
+PROJECT_ROOT = Path(__file__).parent
+
+# Maximum tool calls per question
+MAX_TOOL_CALLS = 10
+
+# System prompt for the agent
+SYSTEM_PROMPT = """You are a documentation agent that answers questions about a software engineering project.
+
+You have access to two tools:
+- list_files: List files and directories at a given path
+- read_file: Read contents of a file from the project repository
+
+Workflow:
+1. Use list_files to discover what files exist in the wiki/ directory
+2. Use read_file to read relevant files and find the answer
+3. When you find the answer, provide it along with the source reference
+
+Important:
+- Always include the source field in your final answer (e.g., "wiki/git-workflow.md#resolving-merge-conflicts")
+- Do not make up information — only use content from actual files
+- If you cannot find the answer, say so honestly
+- When referencing a section, use the format: wiki/filename.md#section-anchor
+- Section anchors are lowercase with hyphens instead of spaces
+
+Format your final answer clearly and include the source reference.
+"""
+
+# Tool definitions for LLM function calling
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Read contents of a file from the project repository",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative path from project root (e.g., 'wiki/git-workflow.md')",
+                    }
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_files",
+            "description": "List files and directories at a given path",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative directory path from project root (e.g., 'wiki')",
+                    }
+                },
+                "required": ["path"],
+            },
+        },
+    },
+]
+
 
 def validate_config() -> None:
     """Validate that required configuration is present."""
@@ -39,18 +105,160 @@ def validate_config() -> None:
         sys.exit(1)
 
 
-def call_llm(question: str) -> str:
+def is_safe_path(base_path: Path, requested_path: Path) -> bool:
     """
-    Call the LLM API and return the answer.
+    Check if requested_path is within base_path.
 
     Args:
-        question: The user's question.
+        base_path: The base directory (project root)
+        requested_path: The path to validate
 
     Returns:
-        The LLM's answer as a string.
+        True if the path is safe, False otherwise
+    """
+    try:
+        base_resolved = base_path.resolve()
+        requested_resolved = requested_path.resolve()
+        return str(requested_resolved).startswith(str(base_resolved) + os.sep) or str(
+            requested_resolved
+        ) == str(base_resolved)
+    except OSError, ValueError:
+        return False
+
+
+def normalize_path(relative_path: str) -> Path:
+    """
+    Normalize and validate relative path.
+
+    Args:
+        relative_path: Path relative to project root
+
+    Returns:
+        Absolute path within project root
 
     Raises:
-        SystemExit: If the API call fails.
+        ValueError: If path traversal is detected
+    """
+    # Remove leading/trailing slashes
+    relative_path = relative_path.strip("/")
+
+    # Check for path traversal attempts
+    parts = relative_path.replace("\\", "/").split("/")
+    if ".." in parts:
+        raise ValueError("Path traversal not allowed: " + relative_path)
+
+    # Build absolute path
+    absolute_path = PROJECT_ROOT / relative_path
+
+    return absolute_path
+
+
+def read_file(path: str) -> str:
+    """
+    Read contents of a file from the project repository.
+
+    Args:
+        path: Relative path from project root
+
+    Returns:
+        File contents as a string, or error message
+    """
+    try:
+        absolute_path = normalize_path(path)
+
+        # Check if path is within project root
+        if not is_safe_path(PROJECT_ROOT, absolute_path):
+            return f"Error: Access denied - path outside project directory: {path}"
+
+        # Check if file exists
+        if not absolute_path.exists():
+            return f"Error: File not found: {path}"
+
+        # Check if it's a file (not directory)
+        if not absolute_path.is_file():
+            return f"Error: Not a file: {path}"
+
+        # Read and return contents
+        content = absolute_path.read_text(encoding="utf-8")
+        return content
+
+    except ValueError as e:
+        return f"Error: {e}"
+    except Exception as e:
+        return f"Error reading file: {e}"
+
+
+def list_files(path: str) -> str:
+    """
+    List files and directories at a given path.
+
+    Args:
+        path: Relative directory path from project root
+
+    Returns:
+        Newline-separated listing of entries, or error message
+    """
+    try:
+        absolute_path = normalize_path(path)
+
+        # Check if path is within project root
+        if not is_safe_path(PROJECT_ROOT, absolute_path):
+            return f"Error: Access denied - path outside project directory: {path}"
+
+        # Check if directory exists
+        if not absolute_path.exists():
+            return f"Error: Directory not found: {path}"
+
+        # Check if it's a directory
+        if not absolute_path.is_dir():
+            return f"Error: Not a directory: {path}"
+
+        # List entries
+        entries = sorted([entry.name for entry in absolute_path.iterdir()])
+        return "\n".join(entries)
+
+    except ValueError as e:
+        return f"Error: {e}"
+    except Exception as e:
+        return f"Error listing directory: {e}"
+
+
+def execute_tool(tool_name: str, args: dict[str, Any]) -> str:
+    """
+    Execute a tool and return the result.
+
+    Args:
+        tool_name: Name of the tool to execute
+        args: Arguments for the tool
+
+    Returns:
+        Tool result as a string
+    """
+    print(f"Executing tool: {tool_name}({args})", file=sys.stderr)
+
+    if tool_name == "read_file":
+        return read_file(args.get("path", ""))
+    elif tool_name == "list_files":
+        return list_files(args.get("path", ""))
+    else:
+        return f"Error: Unknown tool: {tool_name}"
+
+
+def call_llm(
+    messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    """
+    Call the LLM API and return the response.
+
+    Args:
+        messages: List of message dicts for the conversation
+        tools: Optional list of tool definitions
+
+    Returns:
+        Parsed response data from LLM
+
+    Raises:
+        SystemExit: If the API call fails
     """
     url = f"{LLM_API_BASE}/chat/completions"
 
@@ -59,15 +267,13 @@ def call_llm(question: str) -> str:
         "Content-Type": "application/json",
     }
 
-    payload = {
+    payload: dict[str, Any] = {
         "model": LLM_MODEL,
-        "messages": [
-            {
-                "role": "user",
-                "content": question,
-            }
-        ],
+        "messages": messages,
     }
+
+    if tools:
+        payload["tools"] = tools
 
     print(f"Calling LLM at {url}...", file=sys.stderr)
 
@@ -87,16 +293,147 @@ def call_llm(question: str) -> str:
         print(f"Error: Failed to connect to LLM API: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # Parse the response
-    try:
-        answer = data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError) as e:
-        print(f"Error: Unexpected LLM response format: {e}", file=sys.stderr)
-        print(f"Response: {data}", file=sys.stderr)
-        sys.exit(1)
+    return data
 
-    print(f"LLM responded successfully.", file=sys.stderr)
-    return answer
+
+def extract_source_from_answer(
+    answer: str, tool_calls_log: list[dict[str, Any]]
+) -> str:
+    """
+    Extract or generate source reference from the answer.
+
+    Args:
+        answer: The LLM's answer text
+        tool_calls_log: Log of tool calls made
+
+    Returns:
+        Source reference string (e.g., "wiki/git-workflow.md#section")
+    """
+    import re
+
+    # Try to find a file reference in the answer
+    wiki_pattern = r"wiki/[\w-]+\.md"
+    matches = re.findall(wiki_pattern, answer)
+
+    if matches:
+        # Use the last mentioned file
+        file_path = matches[-1]
+        # Try to find a section anchor from headers in the answer
+        section_pattern = r"#+\s+([A-Za-z][A-Za-z0-9\s-]*)"
+        # Check tool results for section headers
+        for tc in tool_calls_log:
+            if tc["tool"] == "read_file":
+                result = tc.get("result", "")
+                # Look for headers in the content
+                headers = re.findall(r"^#\s+(.+)$", result, re.MULTILINE)
+                if headers:
+                    # Convert first header to anchor
+                    anchor = headers[0].lower().replace(" ", "-").replace("'", "")
+                    return f"{file_path}#{anchor}"
+        return file_path
+
+    # Fallback: use the last read_file path
+    for tc in reversed(tool_calls_log):
+        if tc["tool"] == "read_file":
+            return tc["args"].get("path", "wiki/unknown.md")
+
+    # If only list_files was used, mention wiki directory
+    for tc in reversed(tool_calls_log):
+        if tc["tool"] == "list_files":
+            return f"wiki/ (listing via {tc['args'].get('path', 'unknown')})"
+
+    return "wiki/unknown.md"
+
+
+def run_agentic_loop(question: str) -> tuple[str, str, list[dict[str, Any]]]:
+    """
+    Run the agentic loop to answer a question.
+
+    Args:
+        question: The user's question
+
+    Returns:
+        Tuple of (answer, source, tool_calls_log)
+    """
+    # Initialize conversation
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": question},
+    ]
+
+    tool_calls_log: list[dict[str, Any]] = []
+
+    for iteration in range(MAX_TOOL_CALLS):
+        print(f"\n--- Iteration {iteration + 1} ---", file=sys.stderr)
+
+        # Call LLM
+        data = call_llm(messages, TOOLS)
+
+        # Parse response
+        try:
+            message = data["choices"][0]["message"]
+        except (KeyError, IndexError) as e:
+            print(f"Error: Unexpected LLM response format: {e}", file=sys.stderr)
+            print(f"Response: {data}", file=sys.stderr)
+            sys.exit(1)
+
+        # Check for tool calls
+        tool_calls = message.get("tool_calls", [])
+
+        if tool_calls:
+            # LLM wants to call tools
+            print(f"LLM returned {len(tool_calls)} tool call(s)", file=sys.stderr)
+
+            # Add assistant message with tool calls
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": message.get("content"),
+                    "tool_calls": tool_calls,
+                }
+            )
+
+            # Execute each tool call
+            for tool_call in tool_calls:
+                tool_name = tool_call["function"]["name"]
+                tool_args = json.loads(tool_call["function"]["arguments"])
+                tool_call_id = tool_call["id"]
+
+                # Execute tool
+                result = execute_tool(tool_name, tool_args)
+
+                # Log the tool call
+                tool_calls_log.append(
+                    {"tool": tool_name, "args": tool_args, "result": result}
+                )
+
+                # Add tool result to messages
+                messages.append(
+                    {"role": "tool", "tool_call_id": tool_call_id, "content": result}
+                )
+
+                print(f"Tool result: {result[:100]}...", file=sys.stderr)
+
+            # Continue loop - send updated messages back to LLM
+
+        else:
+            # LLM returned final answer (no tool calls)
+            print("LLM returned final answer", file=sys.stderr)
+            answer = message.get("content", "")
+
+            # Extract source
+            source = extract_source_from_answer(answer, tool_calls_log)
+
+            return answer, source, tool_calls_log
+
+    # Reached max tool calls
+    print(f"\nReached maximum tool calls ({MAX_TOOL_CALLS})", file=sys.stderr)
+
+    # Get whatever answer we have from the last message
+    answer = "I reached the maximum number of tool calls. Based on the information gathered, please review the tool results above."
+    source = extract_source_from_answer(answer, tool_calls_log)
+
+    return answer, source, tool_calls_log
 
 
 def main() -> None:
@@ -113,13 +450,14 @@ def main() -> None:
     # Validate configuration
     validate_config()
 
-    # Call LLM and get answer
-    answer = call_llm(question)
+    # Run agentic loop
+    answer, source, tool_calls_log = run_agentic_loop(question)
 
     # Format output as JSON
     result: dict[str, Any] = {
         "answer": answer,
-        "tool_calls": [],
+        "source": source,
+        "tool_calls": tool_calls_log,
     }
 
     # Output JSON to stdout (single line)
