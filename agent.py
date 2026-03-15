@@ -23,10 +23,16 @@ from dotenv import load_dotenv
 env_path = Path(__file__).parent / ".env.agent.secret"
 load_dotenv(env_path)
 
+# Also load .env.docker.secret for LMS_API_KEY
+docker_env_path = Path(__file__).parent / ".env.docker.secret"
+load_dotenv(docker_env_path, override=False)
+
 # Configuration from environment
 LLM_API_KEY = os.getenv("LLM_API_KEY")
 LLM_API_BASE = os.getenv("LLM_API_BASE")
 LLM_MODEL = os.getenv("LLM_MODEL", "qwen3-coder-plus")
+LMS_API_KEY = os.getenv("LMS_API_KEY")
+AGENT_API_BASE_URL = os.getenv("AGENT_API_BASE_URL", "http://localhost:42002")
 
 # Project root for file operations
 PROJECT_ROOT = Path(__file__).parent
@@ -35,25 +41,41 @@ PROJECT_ROOT = Path(__file__).parent
 MAX_TOOL_CALLS = 10
 
 # System prompt for the agent
-SYSTEM_PROMPT = """You are a documentation agent that answers questions about a software engineering project.
+SYSTEM_PROMPT = """You are a system agent that answers questions about a software engineering project.
 
-You have access to two tools:
+You have access to three tools:
 - list_files: List files and directories at a given path
 - read_file: Read contents of a file from the project repository
+- query_api: Call the deployed backend API to get live data
+
+Tool selection guide:
+- Use list_files to discover what files exist (e.g., in wiki/ or backend/)
+- Use read_file to read documentation, source code, or configuration files
+- Use query_api to query live system data, check API responses, or get status codes
+
+When to use query_api:
+- Questions about current database state (e.g., "How many items...?")
+- Questions about API behavior (e.g., "What status code does /items/ return?")
+- Questions that require live data, not static documentation
+
+When to use read_file:
+- Questions about the project wiki
+- Questions about source code (e.g., "What framework does the backend use?")
+- Questions about configuration (e.g., docker-compose.yml, Dockerfile)
 
 Workflow:
-1. Use list_files to discover what files exist in the wiki/ directory
-2. Use read_file to read relevant files and find the answer
-3. When you find the answer, provide it along with the source reference
+1. Analyze the question to determine which tool(s) to use
+2. Use list_files if you need to discover file structure
+3. Use read_file to read relevant files and find the answer
+4. Use query_api to get live data from the backend
+5. For bug diagnosis: use query_api to see the error, then read_file to find the bug
 
 Important:
-- Always include the source field in your final answer (e.g., "wiki/git-workflow.md#resolving-merge-conflicts")
-- Do not make up information — only use content from actual files
+- Include the source field when referencing files (e.g., "wiki/git-workflow.md#section")
+- For API queries, you can mention the endpoint as source (e.g., "API: GET /items/")
+- Do not make up information — only use content from actual files or API responses
 - If you cannot find the answer, say so honestly
-- When referencing a section, use the format: wiki/filename.md#section-anchor
 - Section anchors are lowercase with hyphens instead of spaces
-
-Format your final answer clearly and include the source reference.
 """
 
 # Tool definitions for LLM function calling
@@ -89,6 +111,31 @@ TOOLS = [
                     }
                 },
                 "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_api",
+            "description": "Call the deployed backend API to get live data, check status codes, or query database",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "method": {
+                        "type": "string",
+                        "description": "HTTP method (GET, POST, etc.)",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "API endpoint path (e.g., '/items/', '/analytics/completion-rate')",
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "Optional JSON request body for POST requests",
+                    },
+                },
+                "required": ["method", "path"],
             },
         },
     },
@@ -240,6 +287,12 @@ def execute_tool(tool_name: str, args: dict[str, Any]) -> str:
         return read_file(args.get("path", ""))
     elif tool_name == "list_files":
         return list_files(args.get("path", ""))
+    elif tool_name == "query_api":
+        return query_api(
+            args.get("method", "GET"),
+            args.get("path", ""),
+            args.get("body"),
+        )
     else:
         return f"Error: Unknown tool: {tool_name}"
 
@@ -342,7 +395,52 @@ def extract_source_from_answer(
         if tc["tool"] == "list_files":
             return f"wiki/ (listing via {tc['args'].get('path', 'unknown')})"
 
+    # If query_api was used, return the API endpoint as source
+    for tc in reversed(tool_calls_log):
+        if tc["tool"] == "query_api":
+            return f"API: {tc['args'].get('method', 'GET')} {tc['args'].get('path', 'unknown')}"
+
     return "wiki/unknown.md"
+
+
+def query_api(method: str, path: str, body: str = None) -> str:
+    """
+    Call the deployed backend API.
+
+    Args:
+        method: HTTP method (GET, POST, etc.)
+        path: API endpoint path (e.g., "/items/")
+        body: Optional JSON request body for POST requests
+
+    Returns:
+        JSON string with status_code and body
+    """
+    global LMS_API_KEY, AGENT_API_BASE_URL
+
+    if not LMS_API_KEY:
+        return json.dumps({"status_code": 500, "body": "LMS_API_KEY not configured"})
+
+    url = f"{AGENT_API_BASE_URL}{path}"
+    headers = {"Authorization": f"Bearer {LMS_API_KEY}"}
+
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            if method.upper() == "GET":
+                response = client.get(url, headers=headers)
+            elif method.upper() == "POST":
+                response = client.post(
+                    url, headers=headers, json=json.loads(body) if body else None
+                )
+            else:
+                return json.dumps(
+                    {"status_code": 400, "body": f"Unsupported method: {method}"}
+                )
+
+            return json.dumps(
+                {"status_code": response.status_code, "body": response.text}
+            )
+    except Exception as e:
+        return json.dumps({"status_code": 500, "body": str(e)})
 
 
 def run_agentic_loop(question: str) -> tuple[str, str, list[dict[str, Any]]]:

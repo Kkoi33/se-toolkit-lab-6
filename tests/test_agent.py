@@ -168,6 +168,79 @@ def test_agent_output_format():
     print(f"✓ test_agent_output_format passed")
 
 
+def test_backend_framework_question():
+    """
+    Test that agent uses read_file to find out what framework the backend uses.
+
+    This test verifies:
+    1. Agent uses read_file tool to read backend source code
+    2. Answer contains 'FastAPI'
+    3. tool_calls contains read_file entry
+    """
+    question = "What Python web framework does this project's backend use?"
+    output = run_agent(question)
+
+    # Validate required fields exist
+    assert "answer" in output, "Missing 'answer' field in output"
+    assert "tool_calls" in output, "Missing 'tool_calls' field in output"
+
+    # Validate answer is not empty
+    assert len(output["answer"]) > 0, "'answer' field is empty"
+
+    # Validate tool_calls contains read_file
+    tool_names = [tc.get("tool") for tc in output["tool_calls"]]
+    assert "read_file" in tool_names, (
+        f"Expected 'read_file' in tool_calls, got: {tool_names}"
+    )
+
+    # Validate answer contains FastAPI
+    assert "FastAPI" in output["answer"], (
+        f"Expected answer to contain 'FastAPI', got: {output['answer']}"
+    )
+
+    print(f"✓ test_backend_framework_question passed")
+    print(f"  Answer: {output['answer'][:80]}...")
+    print(f"  Tools: {', '.join(tool_names)}")
+
+
+def test_database_item_count_question():
+    """
+    Test that agent uses query_api to find out how many items are in the database.
+
+    This test verifies:
+    1. Agent uses query_api tool to query the backend
+    2. Answer contains a number > 0
+    3. tool_calls contains query_api entry
+    """
+    question = "How many items are currently stored in the database?"
+    output = run_agent(question)
+
+    # Validate required fields exist
+    assert "answer" in output, "Missing 'answer' field in output"
+    assert "tool_calls" in output, "Missing 'tool_calls' field in output"
+
+    # Validate answer is not empty
+    assert len(output["answer"]) > 0, "'answer' field is empty"
+
+    # Validate tool_calls contains query_api
+    tool_names = [tc.get("tool") for tc in output["tool_calls"]]
+    assert "query_api" in tool_names, (
+        f"Expected 'query_api' in tool_calls, got: {tool_names}"
+    )
+
+    # Validate answer contains a number
+    import re
+
+    numbers = re.findall(r"\d+", output["answer"])
+    assert len(numbers) > 0, (
+        f"Expected answer to contain a number, got: {output['answer']}"
+    )
+
+    print(f"✓ test_database_item_count_question passed")
+    print(f"  Answer: {output['answer'][:80]}...")
+    print(f"  Tools: {', '.join(tool_names)}")
+
+
 if __name__ == "__main__":
     print("Running agent.py regression tests...\n")
 
@@ -178,6 +251,12 @@ if __name__ == "__main__":
     print()
 
     test_wiki_listing_question()
+    print()
+
+    test_backend_framework_question()
+    print()
+
+    test_database_item_count_question()
     print()
 
     print("All tests passed!")
