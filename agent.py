@@ -527,46 +527,85 @@ def call_llm(
     print(f"Calling LLM at {url}...", file=sys.stderr)
 
     try:
-        # Use os.system with curl instead of httpx due to Docker networking issues on Windows
-        import os
         import json as json_module
+        import subprocess
         import tempfile
 
         json_payload = json_module.dumps(payload)
 
-        # Write JSON to temp file to avoid escaping issues
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            f.write(json_payload)
-            temp_file = f.name
+        # Use temp file for large payloads to avoid Windows command line length limits
+        if len(json_payload) > 8000:
+            # Write to temp file
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False, encoding="utf-8"
+            ) as f:
+                f.write(json_payload)
+                temp_file = f.name
 
-        try:
-            # Build curl command
-            cmd = (
-                f'curl -s -X POST "{url}" '
-                f'-H "Authorization: Bearer {LLM_API_KEY}" '
-                f'-H "Content-Type: application/json" '
-                f"--connect-timeout 30 --max-time 120 "
-                f"-d @{temp_file}"
+            try:
+                result = subprocess.run(
+                    [
+                        "curl",
+                        "-s",
+                        "-X",
+                        "POST",
+                        url,
+                        "-H",
+                        f"Authorization: Bearer {LLM_API_KEY}",
+                        "-H",
+                        "Content-Type: application/json",
+                        "--connect-timeout",
+                        "30",
+                        "--max-time",
+                        "120",
+                        "-d",
+                        f"@{temp_file}",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+            finally:
+                import os
+
+                os.remove(temp_file)
+        else:
+            # Use direct JSON string
+            result = subprocess.run(
+                [
+                    "curl",
+                    "-s",
+                    "-X",
+                    "POST",
+                    url,
+                    "-H",
+                    f"Authorization: Bearer {LLM_API_KEY}",
+                    "-H",
+                    "Content-Type: application/json",
+                    "--connect-timeout",
+                    "30",
+                    "--max-time",
+                    "120",
+                    "-d",
+                    json_payload,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
 
-            # Execute with os.system and capture output via temp file
-            output_file = temp_file + ".out"
-            os.system(f'{cmd} > "{output_file}" 2>&1')
+        response_text = result.stdout
 
-            with open(output_file, "r", encoding="utf-8") as f:
-                response_text = f.read()
+        if not response_text:
+            raise Exception(f"curl returned empty response. stderr: {result.stderr}")
 
-            os.remove(output_file)
+        data = json_module.loads(response_text)
+        if "error" in data:
+            raise Exception(f"API error: {data['error']}")
 
-            if not response_text:
-                raise Exception("curl returned empty response")
-
-            data = json_module.loads(response_text)
-            if "error" in data:
-                raise Exception(f"API error: {data['error']}")
-        finally:
-            os.remove(temp_file)
-
+    except subprocess.TimeoutExpired:
+        print("Error: LLM API call timed out", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
         print(f"Error: LLM API call failed: {e}", file=sys.stderr)
         sys.exit(1)
@@ -630,7 +669,7 @@ def extract_source_from_answer(
 
 def query_api(method: str, path: str, body: str = None, omit_auth: bool = False) -> str:
     """
-    Call the deployed backend API using curl via os.system.
+    Call the deployed backend API using subprocess.run with curl.
 
     Args:
         method: HTTP method (GET, POST, etc.)
@@ -649,53 +688,44 @@ def query_api(method: str, path: str, body: str = None, omit_auth: bool = False)
     url = f"{AGENT_API_BASE_URL}{path}"
 
     try:
-        import os
-        import tempfile
+        import subprocess
 
         # Build curl command with status code output
-        cmd = f'curl -s -w "\\n%{{http_code}}" -X {method.upper()} "{url}" --connect-timeout 30 --max-time 60'
+        curl_args = [
+            "curl",
+            "-s",
+            "-w",
+            "\n%{http_code}",
+            "-X",
+            method.upper(),
+            url,
+            "--connect-timeout",
+            "30",
+            "--max-time",
+            "60",
+        ]
 
         # Add headers
         if not omit_auth:
-            cmd += f' -H "Authorization: Bearer {LMS_API_KEY}"'
-        cmd += ' -H "Content-Type: application/json"'
+            curl_args.extend(["-H", f"Authorization: Bearer {LMS_API_KEY}"])
+        curl_args.extend(["-H", "Content-Type: application/json"])
 
         # Add body for POST/PUT/PATCH
         if method.upper() in ("POST", "PUT", "PATCH") and body:
-            # Write body to temp file to avoid escaping issues
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".json", delete=False
-            ) as f:
-                f.write(body)
-                temp_file = f.name
-            try:
-                cmd += f" -d @{temp_file}"
-                output_file = temp_file + ".out"
-                os.system(f'{cmd} > "{output_file}" 2>&1')
-                os.remove(temp_file)
-            finally:
-                if os.path.exists(temp_file):
-                    os.remove(temp_file)
-        else:
-            output_file = tempfile.mktemp(suffix=".out")
-            os.system(f'{cmd} > "{output_file}" 2>&1')
+            curl_args.extend(["-d", body])
 
-        # Read output - last line is status code
-        try:
-            with open(output_file, "r", encoding="utf-8") as f:
-                lines = f.read().splitlines()
-                status_code = int(lines[-1]) if lines else 200
-                response_text = "\n".join(lines[:-1]) if len(lines) > 1 else ""
-            os.remove(output_file)
-        except FileNotFoundError:
-            status_code = 500
-            response_text = ""
-        except ValueError:
-            status_code = 500
-            response_text = ""
+        # Execute curl
+        result = subprocess.run(curl_args, capture_output=True, text=True, timeout=60)
+
+        # Parse output - last line is status code
+        lines = result.stdout.splitlines()
+        status_code = int(lines[-1]) if lines else 200
+        response_text = "\n".join(lines[:-1]) if len(lines) > 1 else ""
 
         return json.dumps({"status_code": status_code, "body": response_text})
 
+    except subprocess.TimeoutExpired:
+        return json.dumps({"status_code": 504, "body": "Request timed out"})
     except Exception as e:
         return json.dumps({"status_code": 500, "body": str(e)})
 

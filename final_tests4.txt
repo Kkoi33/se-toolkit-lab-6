@@ -1,0 +1,320 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.2, pytest-9.0.2, pluggy-1.6.0 -- C:\1course\software-engineering-toolkit\se-toolkit-lab-6\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: c:\1course\software-engineering-toolkit\se-toolkit-lab-6
+configfile: pyproject.toml
+plugins: anyio-4.12.1, asyncio-1.3.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 5 items
+
+tests/test_agent.py::test_merge_conflict_question FAILED                 [ 20%]
+tests/test_agent.py::test_wiki_listing_question FAILED                   [ 40%]
+tests/test_agent.py::test_agent_output_format FAILED                     [ 60%]
+tests/test_agent.py::test_backend_framework_question FAILED              [ 80%]
+tests/test_agent.py::test_database_item_count_question FAILED            [100%]
+
+================================== FAILURES ===================================
+________________________ test_merge_conflict_question _________________________
+
+    def test_merge_conflict_question():
+        """
+        Test that agent correctly answers about merge conflicts.
+    
+        This test verifies:
+        1. Agent uses read_file tool to read wiki/git-workflow.md
+        2. Source field contains reference to git-workflow.md
+        3. Answer is not empty
+        """
+        question = "How do you resolve a merge conflict?"
+>       output = run_agent(question)
+                 ^^^^^^^^^^^^^^^^^^^
+
+tests\test_agent.py:95: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+question = 'How do you resolve a merge conflict?'
+
+    def run_agent(question: str) -> dict:
+        """
+        Run agent.py with a question and return parsed JSON output.
+    
+        Args:
+            question: The question to ask the agent
+    
+        Returns:
+            Parsed JSON output as a dictionary
+    
+        Raises:
+            AssertionError: If agent fails or output is invalid
+        """
+        project_root = get_project_root()
+        agent_path = project_root / "agent.py"
+    
+        # Pass current environment (which includes loaded .env variables) to subprocess
+        env = os.environ.copy()
+    
+        # Run agent.py directly with python (not uv run) to avoid environment isolation
+        result = subprocess.run(
+            ["python", str(agent_path), question],
+            capture_output=True,
+            text=True,
+            timeout=120,  # Increased timeout for agentic loop
+            cwd=project_root,
+            env=env,  # Pass environment variables
+        )
+    
+        # Check exit code
+>       assert result.returncode == 0, f"agent.py failed with: {result.stderr}"
+E       AssertionError: agent.py failed with: Traceback (most recent call last):
+E           File "c:\1course\software-engineering-toolkit\se-toolkit-lab-6\agent.py", line 19, in <module>
+E             import httpx
+E         ModuleNotFoundError: No module named 'httpx'
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['python', 'c:\\1course\\software-engineering-toolkit\\se-toolkit-lab-6\\agent.py', 'How do you resolve a merge conflict?'], returncode=1, stdout='', stderr='Traceback (most recent call last):\n  File "c:\\1course\\software-engineering-toolkit\\se-toolkit-lab-6\\agent.py", line 19, in <module>\n    import httpx\nModuleNotFoundError: No module named \'httpx\'\n').returncode
+
+tests\test_agent.py:74: AssertionError
+_________________________ test_wiki_listing_question __________________________
+
+    def test_wiki_listing_question():
+        """
+        Test that agent correctly lists wiki files.
+    
+        This test verifies:
+        1. Agent uses list_files tool with path='wiki'
+        2. Answer contains file names from wiki
+        3. tool_calls contains list_files entry
+        """
+        question = "What files are in the wiki?"
+>       output = run_agent(question)
+                 ^^^^^^^^^^^^^^^^^^^
+
+tests\test_agent.py:140: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+question = 'What files are in the wiki?'
+
+    def run_agent(question: str) -> dict:
+        """
+        Run agent.py with a question and return parsed JSON output.
+    
+        Args:
+            question: The question to ask the agent
+    
+        Returns:
+            Parsed JSON output as a dictionary
+    
+        Raises:
+            AssertionError: If agent fails or output is invalid
+        """
+        project_root = get_project_root()
+        agent_path = project_root / "agent.py"
+    
+        # Pass current environment (which includes loaded .env variables) to subprocess
+        env = os.environ.copy()
+    
+        # Run agent.py directly with python (not uv run) to avoid environment isolation
+        result = subprocess.run(
+            ["python", str(agent_path), question],
+            capture_output=True,
+            text=True,
+            timeout=120,  # Increased timeout for agentic loop
+            cwd=project_root,
+            env=env,  # Pass environment variables
+        )
+    
+        # Check exit code
+>       assert result.returncode == 0, f"agent.py failed with: {result.stderr}"
+E       AssertionError: agent.py failed with: Traceback (most recent call last):
+E           File "c:\1course\software-engineering-toolkit\se-toolkit-lab-6\agent.py", line 19, in <module>
+E             import httpx
+E         ModuleNotFoundError: No module named 'httpx'
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['python', 'c:\\1course\\software-engineering-toolkit\\se-toolkit-lab-6\\agent.py', 'What files are in the wiki?'], returncode=1, stdout='', stderr='Traceback (most recent call last):\n  File "c:\\1course\\software-engineering-toolkit\\se-toolkit-lab-6\\agent.py", line 19, in <module>\n    import httpx\nModuleNotFoundError: No module named \'httpx\'\n').returncode
+
+tests\test_agent.py:74: AssertionError
+__________________________ test_agent_output_format ___________________________
+
+    def test_agent_output_format():
+        """
+        Test that agent.py outputs valid JSON with required fields.
+    
+        This is a basic format test using a simple question.
+        """
+        question = "What is the project about?"
+>       output = run_agent(question)
+                 ^^^^^^^^^^^^^^^^^^^
+
+tests\test_agent.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+question = 'What is the project about?'
+
+    def run_agent(question: str) -> dict:
+        """
+        Run agent.py with a question and return parsed JSON output.
+    
+        Args:
+            question: The question to ask the agent
+    
+        Returns:
+            Parsed JSON output as a dictionary
+    
+        Raises:
+            AssertionError: If agent fails or output is invalid
+        """
+        project_root = get_project_root()
+        agent_path = project_root / "agent.py"
+    
+        # Pass current environment (which includes loaded .env variables) to subprocess
+        env = os.environ.copy()
+    
+        # Run agent.py directly with python (not uv run) to avoid environment isolation
+        result = subprocess.run(
+            ["python", str(agent_path), question],
+            capture_output=True,
+            text=True,
+            timeout=120,  # Increased timeout for agentic loop
+            cwd=project_root,
+            env=env,  # Pass environment variables
+        )
+    
+        # Check exit code
+>       assert result.returncode == 0, f"agent.py failed with: {result.stderr}"
+E       AssertionError: agent.py failed with: Traceback (most recent call last):
+E           File "c:\1course\software-engineering-toolkit\se-toolkit-lab-6\agent.py", line 19, in <module>
+E             import httpx
+E         ModuleNotFoundError: No module named 'httpx'
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['python', 'c:\\1course\\software-engineering-toolkit\\se-toolkit-lab-6\\agent.py', 'What is the project about?'], returncode=1, stdout='', stderr='Traceback (most recent call last):\n  File "c:\\1course\\software-engineering-toolkit\\se-toolkit-lab-6\\agent.py", line 19, in <module>\n    import httpx\nModuleNotFoundError: No module named \'httpx\'\n').returncode
+
+tests\test_agent.py:74: AssertionError
+_______________________ test_backend_framework_question _______________________
+
+    def test_backend_framework_question():
+        """
+        Test that agent uses read_file to find out what framework the backend uses.
+    
+        This test verifies:
+        1. Agent uses read_file tool to read backend source code
+        2. Answer contains 'FastAPI'
+        3. tool_calls contains read_file entry
+        """
+        question = "What Python web framework does this project's backend use?"
+>       output = run_agent(question)
+                 ^^^^^^^^^^^^^^^^^^^
+
+tests\test_agent.py:211: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+question = "What Python web framework does this project's backend use?"
+
+    def run_agent(question: str) -> dict:
+        """
+        Run agent.py with a question and return parsed JSON output.
+    
+        Args:
+            question: The question to ask the agent
+    
+        Returns:
+            Parsed JSON output as a dictionary
+    
+        Raises:
+            AssertionError: If agent fails or output is invalid
+        """
+        project_root = get_project_root()
+        agent_path = project_root / "agent.py"
+    
+        # Pass current environment (which includes loaded .env variables) to subprocess
+        env = os.environ.copy()
+    
+        # Run agent.py directly with python (not uv run) to avoid environment isolation
+        result = subprocess.run(
+            ["python", str(agent_path), question],
+            capture_output=True,
+            text=True,
+            timeout=120,  # Increased timeout for agentic loop
+            cwd=project_root,
+            env=env,  # Pass environment variables
+        )
+    
+        # Check exit code
+>       assert result.returncode == 0, f"agent.py failed with: {result.stderr}"
+E       AssertionError: agent.py failed with: Traceback (most recent call last):
+E           File "c:\1course\software-engineering-toolkit\se-toolkit-lab-6\agent.py", line 19, in <module>
+E             import httpx
+E         ModuleNotFoundError: No module named 'httpx'
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['python', 'c:\\1course\\software-engineering-toolkit\\se-toolkit-lab-6\\agent.py', "What Python web framework does this project's backend use?"], returncode=1, stdout='', stderr='Traceback (most recent call last):\n  File "c:\\1course\\software-engineering-toolkit\\se-toolkit-lab-6\\agent.py", line 19, in <module>\n    import httpx\nModuleNotFoundError: No module named \'httpx\'\n').returncode
+
+tests\test_agent.py:74: AssertionError
+______________________ test_database_item_count_question ______________________
+
+    def test_database_item_count_question():
+        """
+        Test that agent uses query_api to find out how many items are in the database.
+    
+        This test verifies:
+        1. Agent uses query_api tool to query the backend
+        2. Answer contains a number > 0
+        3. tool_calls contains query_api entry
+        """
+        question = "How many items are currently stored in the database?"
+>       output = run_agent(question)
+                 ^^^^^^^^^^^^^^^^^^^
+
+tests\test_agent.py:246: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+question = 'How many items are currently stored in the database?'
+
+    def run_agent(question: str) -> dict:
+        """
+        Run agent.py with a question and return parsed JSON output.
+    
+        Args:
+            question: The question to ask the agent
+    
+        Returns:
+            Parsed JSON output as a dictionary
+    
+        Raises:
+            AssertionError: If agent fails or output is invalid
+        """
+        project_root = get_project_root()
+        agent_path = project_root / "agent.py"
+    
+        # Pass current environment (which includes loaded .env variables) to subprocess
+        env = os.environ.copy()
+    
+        # Run agent.py directly with python (not uv run) to avoid environment isolation
+        result = subprocess.run(
+            ["python", str(agent_path), question],
+            capture_output=True,
+            text=True,
+            timeout=120,  # Increased timeout for agentic loop
+            cwd=project_root,
+            env=env,  # Pass environment variables
+        )
+    
+        # Check exit code
+>       assert result.returncode == 0, f"agent.py failed with: {result.stderr}"
+E       AssertionError: agent.py failed with: Traceback (most recent call last):
+E           File "c:\1course\software-engineering-toolkit\se-toolkit-lab-6\agent.py", line 19, in <module>
+E             import httpx
+E         ModuleNotFoundError: No module named 'httpx'
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['python', 'c:\\1course\\software-engineering-toolkit\\se-toolkit-lab-6\\agent.py', 'How many items are currently stored in the database?'], returncode=1, stdout='', stderr='Traceback (most recent call last):\n  File "c:\\1course\\software-engineering-toolkit\\se-toolkit-lab-6\\agent.py", line 19, in <module>\n    import httpx\nModuleNotFoundError: No module named \'httpx\'\n').returncode
+
+tests\test_agent.py:74: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_agent.py::test_merge_conflict_question - AssertionError: ag...
+FAILED tests/test_agent.py::test_wiki_listing_question - AssertionError: agen...
+FAILED tests/test_agent.py::test_agent_output_format - AssertionError: agent....
+FAILED tests/test_agent.py::test_backend_framework_question - AssertionError:...
+FAILED tests/test_agent.py::test_database_item_count_question - AssertionErro...
+============================== 5 failed in 0.93s ==============================

@@ -1,0 +1,300 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.2, pytest-9.0.2, pluggy-1.6.0 -- C:\1course\software-engineering-toolkit\se-toolkit-lab-6\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: c:\1course\software-engineering-toolkit\se-toolkit-lab-6
+configfile: pyproject.toml
+plugins: anyio-4.12.1, asyncio-1.3.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 5 items
+
+tests/test_agent.py::test_merge_conflict_question FAILED                 [ 20%]
+tests/test_agent.py::test_wiki_listing_question FAILED                   [ 40%]
+tests/test_agent.py::test_agent_output_format FAILED                     [ 60%]
+tests/test_agent.py::test_backend_framework_question FAILED              [ 80%]
+tests/test_agent.py::test_database_item_count_question FAILED            [100%]
+
+================================== FAILURES ===================================
+________________________ test_merge_conflict_question _________________________
+
+    def test_merge_conflict_question():
+        """
+        Test that agent correctly answers about merge conflicts.
+    
+        This test verifies:
+        1. Agent uses read_file tool to read wiki/git-workflow.md
+        2. Source field contains reference to git-workflow.md
+        3. Answer is not empty
+        """
+        question = "How do you resolve a merge conflict?"
+>       output = run_agent(question)
+                 ^^^^^^^^^^^^^^^^^^^
+
+tests\test_agent.py:65: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+question = 'How do you resolve a merge conflict?'
+
+    def run_agent(question: str) -> dict:
+        """
+        Run agent.py with a question and return parsed JSON output.
+    
+        Args:
+            question: The question to ask the agent
+    
+        Returns:
+            Parsed JSON output as a dictionary
+    
+        Raises:
+            AssertionError: If agent fails or output is invalid
+        """
+        project_root = get_project_root()
+        agent_path = project_root / "agent.py"
+    
+        result = subprocess.run(
+            ["uv", "run", str(agent_path), question],
+            capture_output=True,
+            text=True,
+            timeout=120,  # Increased timeout for agentic loop
+            cwd=project_root,
+        )
+    
+        # Check exit code
+>       assert result.returncode == 0, f"agent.py failed with: {result.stderr}"
+E       AssertionError: agent.py failed with: Question: How do you resolve a merge conflict?
+E         
+E         --- Iteration 1 ---
+E         Calling LLM at http://localhost:42005/v1/chat/completions...
+E         Error: LLM API call failed: API error: {'message': 'Not authenticated with Qwen. Please authenticate first.', 'type': 'authentication_error', 'code': 401}
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['uv', 'run', 'c:\\1course\\software-engineering-toolkit\\se-toolkit-lab-6\\agent.py', 'How do you resolve a merge conflict?'], returncode=1, stdout='', stderr="Question: How do you resolve a merge conflict?\n\n--- Iteration 1 ---\nCalling LLM at http://localhost:42005/v1/chat/completions...\nError: LLM API call failed: API error: {'message': 'Not authenticated with Qwen. Please authenticate first.', 'type': 'authentication_error', 'code': 401}\n").returncode
+
+tests\test_agent.py:44: AssertionError
+_________________________ test_wiki_listing_question __________________________
+
+    def test_wiki_listing_question():
+        """
+        Test that agent correctly lists wiki files.
+    
+        This test verifies:
+        1. Agent uses list_files tool with path='wiki'
+        2. Answer contains file names from wiki
+        3. tool_calls contains list_files entry
+        """
+        question = "What files are in the wiki?"
+>       output = run_agent(question)
+                 ^^^^^^^^^^^^^^^^^^^
+
+tests\test_agent.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+question = 'What files are in the wiki?'
+
+    def run_agent(question: str) -> dict:
+        """
+        Run agent.py with a question and return parsed JSON output.
+    
+        Args:
+            question: The question to ask the agent
+    
+        Returns:
+            Parsed JSON output as a dictionary
+    
+        Raises:
+            AssertionError: If agent fails or output is invalid
+        """
+        project_root = get_project_root()
+        agent_path = project_root / "agent.py"
+    
+        result = subprocess.run(
+            ["uv", "run", str(agent_path), question],
+            capture_output=True,
+            text=True,
+            timeout=120,  # Increased timeout for agentic loop
+            cwd=project_root,
+        )
+    
+        # Check exit code
+>       assert result.returncode == 0, f"agent.py failed with: {result.stderr}"
+E       AssertionError: agent.py failed with: Question: What files are in the wiki?
+E         
+E         --- Iteration 1 ---
+E         Calling LLM at http://localhost:42005/v1/chat/completions...
+E         Error: LLM API call failed: API error: {'message': 'Not authenticated with Qwen. Please authenticate first.', 'type': 'authentication_error', 'code': 401}
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['uv', 'run', 'c:\\1course\\software-engineering-toolkit\\se-toolkit-lab-6\\agent.py', 'What files are in the wiki?'], returncode=1, stdout='', stderr="Question: What files are in the wiki?\n\n--- Iteration 1 ---\nCalling LLM at http://localhost:42005/v1/chat/completions...\nError: LLM API call failed: API error: {'message': 'Not authenticated with Qwen. Please authenticate first.', 'type': 'authentication_error', 'code': 401}\n").returncode
+
+tests\test_agent.py:44: AssertionError
+__________________________ test_agent_output_format ___________________________
+
+    def test_agent_output_format():
+        """
+        Test that agent.py outputs valid JSON with required fields.
+    
+        This is a basic format test using a simple question.
+        """
+        question = "What is the project about?"
+>       output = run_agent(question)
+                 ^^^^^^^^^^^^^^^^^^^
+
+tests\test_agent.py:156: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+question = 'What is the project about?'
+
+    def run_agent(question: str) -> dict:
+        """
+        Run agent.py with a question and return parsed JSON output.
+    
+        Args:
+            question: The question to ask the agent
+    
+        Returns:
+            Parsed JSON output as a dictionary
+    
+        Raises:
+            AssertionError: If agent fails or output is invalid
+        """
+        project_root = get_project_root()
+        agent_path = project_root / "agent.py"
+    
+        result = subprocess.run(
+            ["uv", "run", str(agent_path), question],
+            capture_output=True,
+            text=True,
+            timeout=120,  # Increased timeout for agentic loop
+            cwd=project_root,
+        )
+    
+        # Check exit code
+>       assert result.returncode == 0, f"agent.py failed with: {result.stderr}"
+E       AssertionError: agent.py failed with: Question: What is the project about?
+E         
+E         --- Iteration 1 ---
+E         Calling LLM at http://localhost:42005/v1/chat/completions...
+E         Error: LLM API call failed: API error: {'message': 'Not authenticated with Qwen. Please authenticate first.', 'type': 'authentication_error', 'code': 401}
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['uv', 'run', 'c:\\1course\\software-engineering-toolkit\\se-toolkit-lab-6\\agent.py', 'What is the project about?'], returncode=1, stdout='', stderr="Question: What is the project about?\n\n--- Iteration 1 ---\nCalling LLM at http://localhost:42005/v1/chat/completions...\nError: LLM API call failed: API error: {'message': 'Not authenticated with Qwen. Please authenticate first.', 'type': 'authentication_error', 'code': 401}\n").returncode
+
+tests\test_agent.py:44: AssertionError
+_______________________ test_backend_framework_question _______________________
+
+    def test_backend_framework_question():
+        """
+        Test that agent uses read_file to find out what framework the backend uses.
+    
+        This test verifies:
+        1. Agent uses read_file tool to read backend source code
+        2. Answer contains 'FastAPI'
+        3. tool_calls contains read_file entry
+        """
+        question = "What Python web framework does this project's backend use?"
+>       output = run_agent(question)
+                 ^^^^^^^^^^^^^^^^^^^
+
+tests\test_agent.py:181: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+question = "What Python web framework does this project's backend use?"
+
+    def run_agent(question: str) -> dict:
+        """
+        Run agent.py with a question and return parsed JSON output.
+    
+        Args:
+            question: The question to ask the agent
+    
+        Returns:
+            Parsed JSON output as a dictionary
+    
+        Raises:
+            AssertionError: If agent fails or output is invalid
+        """
+        project_root = get_project_root()
+        agent_path = project_root / "agent.py"
+    
+        result = subprocess.run(
+            ["uv", "run", str(agent_path), question],
+            capture_output=True,
+            text=True,
+            timeout=120,  # Increased timeout for agentic loop
+            cwd=project_root,
+        )
+    
+        # Check exit code
+>       assert result.returncode == 0, f"agent.py failed with: {result.stderr}"
+E       AssertionError: agent.py failed with: Question: What Python web framework does this project's backend use?
+E         
+E         --- Iteration 1 ---
+E         Calling LLM at http://localhost:42005/v1/chat/completions...
+E         Error: LLM API call failed: API error: {'message': 'Not authenticated with Qwen. Please authenticate first.', 'type': 'authentication_error', 'code': 401}
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['uv', 'run', 'c:\\1course\\software-engineering-toolkit\\se-toolkit-lab-6\\agent.py', "What Python web framework does this project's backend use?"], returncode=1, stdout='', stderr="Question: What Python web framework does this project's backend use?\n\n--- Iteration 1 ---\nCalling LLM at http://localhost:42005/v1/chat/completions...\nError: LLM API call failed: API error: {'message': 'Not authenticated with Qwen. Please authenticate first.', 'type': 'authentication_error', 'code': 401}\n").returncode
+
+tests\test_agent.py:44: AssertionError
+______________________ test_database_item_count_question ______________________
+
+    def test_database_item_count_question():
+        """
+        Test that agent uses query_api to find out how many items are in the database.
+    
+        This test verifies:
+        1. Agent uses query_api tool to query the backend
+        2. Answer contains a number > 0
+        3. tool_calls contains query_api entry
+        """
+        question = "How many items are currently stored in the database?"
+>       output = run_agent(question)
+                 ^^^^^^^^^^^^^^^^^^^
+
+tests\test_agent.py:216: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+question = 'How many items are currently stored in the database?'
+
+    def run_agent(question: str) -> dict:
+        """
+        Run agent.py with a question and return parsed JSON output.
+    
+        Args:
+            question: The question to ask the agent
+    
+        Returns:
+            Parsed JSON output as a dictionary
+    
+        Raises:
+            AssertionError: If agent fails or output is invalid
+        """
+        project_root = get_project_root()
+        agent_path = project_root / "agent.py"
+    
+        result = subprocess.run(
+            ["uv", "run", str(agent_path), question],
+            capture_output=True,
+            text=True,
+            timeout=120,  # Increased timeout for agentic loop
+            cwd=project_root,
+        )
+    
+        # Check exit code
+>       assert result.returncode == 0, f"agent.py failed with: {result.stderr}"
+E       AssertionError: agent.py failed with: Question: How many items are currently stored in the database?
+E         
+E         --- Iteration 1 ---
+E         Calling LLM at http://localhost:42005/v1/chat/completions...
+E         Error: LLM API call failed: API error: {'message': 'Not authenticated with Qwen. Please authenticate first.', 'type': 'authentication_error', 'code': 401}
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['uv', 'run', 'c:\\1course\\software-engineering-toolkit\\se-toolkit-lab-6\\agent.py', 'How many items are currently stored in the database?'], returncode=1, stdout='', stderr="Question: How many items are currently stored in the database?\n\n--- Iteration 1 ---\nCalling LLM at http://localhost:42005/v1/chat/completions...\nError: LLM API call failed: API error: {'message': 'Not authenticated with Qwen. Please authenticate first.', 'type': 'authentication_error', 'code': 401}\n").returncode
+
+tests\test_agent.py:44: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_agent.py::test_merge_conflict_question - AssertionError: ag...
+FAILED tests/test_agent.py::test_wiki_listing_question - AssertionError: agen...
+FAILED tests/test_agent.py::test_agent_output_format - AssertionError: agent....
+FAILED tests/test_agent.py::test_backend_framework_question - AssertionError:...
+FAILED tests/test_agent.py::test_database_item_count_question - AssertionErro...
+============================== 5 failed in 5.57s ==============================

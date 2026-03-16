@@ -1,0 +1,14 @@
+  [92m+ [1/10] According to the project wiki, what steps are needed to protect a branch on GitHub? Find the answer in the wiki directory.[0m
+  [92m+ [2/10] What does the project wiki say about connecting to your VM via SSH? Summarize the key steps.[0m
+  [92m+ [3/10] What Python web framework does this project's backend use? Read the source code to find out.[0m
+  [92m+ [4/10] List all API router modules in the backend. What domain does each one handle?[0m
+  [92m+ [5/10] How many items are currently stored in the database? Query the running API to find out.[0m
+  [92m+ [6/10] What HTTP status code does the API return when you request /items/ without sending an authentication header?[0m
+  [92m+ [7/10] Query the /analytics/completion-rate endpoint for a lab that has no data (e.g., lab-99). What error do you get, and what is the bug in the source code?[0m
+  [92m+ [8/10] The /analytics/top-learners endpoint crashes for some labs. Query it, find the error, and read the source code to explain what went wrong.[0m
+  [92m+ [9/10] Read the docker-compose.yml and the backend Dockerfile. Explain the full journey of an HTTP request from the browser to the database and back.[0m
+  [92m+ [10/10] Read the ETL pipeline code. Explain how it ensures idempotency — what happens if the same data is loaded twice?[0m
+
+[1m[92m10/10 PASSED[0m
+
+[93mNote: The autochecker bot tests 10 additional hidden questions and may use LLM-based judging for open-ended answers. You need to pass a minimum threshold overall.[0m

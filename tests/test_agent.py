@@ -4,10 +4,14 @@ Regression tests for agent.py CLI (Task 2: Documentation Agent).
 
 These tests run agent.py as a subprocess and validate the JSON output
 including tool_calls and source fields.
+
+Environment variables are loaded by conftest.py before tests run.
 """
 
 import json
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -19,6 +23,8 @@ def get_project_root() -> Path:
 def run_agent(question: str) -> dict:
     """
     Run agent.py with a question and return parsed JSON output.
+
+    Environment variables are inherited from the pytest process (loaded by conftest.py).
 
     Args:
         question: The question to ask the agent
@@ -32,12 +38,18 @@ def run_agent(question: str) -> dict:
     project_root = get_project_root()
     agent_path = project_root / "agent.py"
 
+    # Inherit environment variables from pytest process
+    # (conftest.py loads .env files before tests run)
+    # Pass the current environment explicitly to subprocess
+    env = os.environ.copy()
+
     result = subprocess.run(
-        ["uv", "run", str(agent_path), question],
+        [sys.executable, str(agent_path), question],
         capture_output=True,
         text=True,
         timeout=120,  # Increased timeout for agentic loop
         cwd=project_root,
+        env=env,  # Explicitly pass environment
     )
 
     # Check exit code
