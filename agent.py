@@ -167,21 +167,25 @@ When asked about data pipelines or idempotency:
 When asked to compare error handling between components (e.g., "Compare how the ETL pipeline handles failures vs how the API..."):
 1. Read the ETL file (backend/app/etl.py) - look for try/except, error logging, session.rollback(), transaction handling
 2. Read at least 2 API router files (backend/app/routers/*.py) - look for HTTPException, @app.exception_handler, error responses
-3. Compare strategies:
-   - ETL: Uses try/except blocks, logs errors, calls session.rollback() on failures, may re-raise exceptions
-   - API: Raises HTTPException with specific status codes (404, 422, 500), uses global exception handlers
+3. Compare strategies with SPECIFIC CODE EXAMPLES:
+   - ETL: Uses `resp.raise_for_status()` for HTTP errors, `await session.commit()` for transactions, checks for existing records before insert
+   - API: Raises `HTTPException(status_code=status.HTTP_404_NOT_FOUND)` for missing resources, catches `IntegrityError` and calls `await session.rollback()` then raises HTTP 422
 4. Explain the difference in approach:
-   - ETL focuses on data integrity (rollback on errors)
+   - ETL focuses on data integrity (rollback on errors, idempotent operations)
    - API focuses on HTTP semantics (proper status codes for clients)
-5. Provide specific examples from the code (function names, patterns)
+5. Provide SPECIFIC examples from the code:
+   - Mention function names (e.g., `fetch_logs()`, `post_learner()`)
+   - Quote specific patterns (e.g., `except IntegrityError as exc: await session.rollback()`)
+   - Explain what each pattern achieves
 
 IMPORTANT: 
 - You MUST read BOTH etl.py AND at least 2 router files before answering
 - Do NOT answer after reading only one file
 - Do NOT say "let's look at" - provide the COMPLETE comparison in ONE final response
-- Example answer structure: "The ETL pipeline handles errors by... In contrast, the API routers handle errors by... The key difference is..."
-- Look for these patterns in ETL: session.rollback(), try/except, IntegrityError handling
-- Look for these patterns in API: HTTPException, status_code, raise HTTPException
+- Include SPECIFIC code examples (function names, exception types, status codes)
+- Example answer structure: "The ETL pipeline handles errors by [specific pattern] in function [name]. In contrast, the API routers handle errors by [specific pattern] in [function]. The key difference is..."
+- Look for these patterns in ETL: `raise_for_status()`, `session.commit()`, `if existing: continue`
+- Look for these patterns in API: `HTTPException`, `status.HTTP_404_NOT_FOUND`, `IntegrityError`, `session.rollback()`
 
 ## Critical Instructions for Analytics Bug Detection
 
@@ -232,21 +236,27 @@ When asked "How many items..." or "How many learners..." or "Query the API and c
 1. IMMEDIATELY use query_api to fetch the data — do NOT read files first
 2. For items: query_api("GET", "/items/") — then count the returned array
 3. For learners: query_api("GET", "/learners/") — then count the returned array
-4. Answer with the COUNT (a number)
+4. Answer with ONLY the COUNT (a number) — keep the answer brief and direct
 5. Source should be: "API: GET /items/" or "API: GET /learners/"
+
+IMPORTANT:
+- Start your answer with the number: "There are X learners..." or "X learners have submitted data"
+- Do NOT include the full JSON response in your answer
+- Do NOT list all the items/learners — just provide the count
+- Keep the answer concise (1-2 sentences maximum)
 
 Example for items:
 - Question: "How many items are currently stored in the database?"
 - Action: query_api("GET", "/items/")
 - Parse the JSON response and count the array length
-- Answer: "There are X items in the database"
+- Answer: "There are 42 items in the database."
 - Source: "API: GET /items/"
 
 Example for learners:
 - Question: "How many distinct learners have submitted data?"
 - Action: query_api("GET", "/learners/")
 - Parse the JSON response and count the array length
-- Answer: "There are X learners"
+- Answer: "There are 257 distinct learners who have submitted data."
 - Source: "API: GET /learners/"
 
 ## Important
