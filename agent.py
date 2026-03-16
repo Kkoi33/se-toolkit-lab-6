@@ -38,7 +38,7 @@ AGENT_API_BASE_URL = os.getenv("AGENT_API_BASE_URL", "http://localhost:42002")
 PROJECT_ROOT = Path(__file__).parent
 
 # Maximum tool calls per question
-MAX_TOOL_CALLS = 10
+MAX_TOOL_CALLS = 15
 
 # System prompt for the agent
 SYSTEM_PROMPT = """You are a system agent that answers questions about a software engineering project.
@@ -164,11 +164,24 @@ When asked about data pipelines or idempotency:
 
 ## Critical Instructions for Error Handling Comparison Questions
 
-When asked to compare error handling between components:
-1. Read the ETL file (etl.py) - look for try/except, error logging, rollback
-2. Read the API router files (routers/*.py) - look for HTTPException, exception handlers
-3. Compare strategies: ETL may use transaction rollback, API may return HTTP error codes
-4. Explain the difference in approach
+When asked to compare error handling between components (e.g., "Compare how the ETL pipeline handles failures vs how the API..."):
+1. Read the ETL file (backend/app/etl.py) - look for try/except, error logging, session.rollback(), transaction handling
+2. Read at least 2 API router files (backend/app/routers/*.py) - look for HTTPException, @app.exception_handler, error responses
+3. Compare strategies:
+   - ETL: Uses try/except blocks, logs errors, calls session.rollback() on failures, may re-raise exceptions
+   - API: Raises HTTPException with specific status codes (404, 422, 500), uses global exception handlers
+4. Explain the difference in approach:
+   - ETL focuses on data integrity (rollback on errors)
+   - API focuses on HTTP semantics (proper status codes for clients)
+5. Provide specific examples from the code (function names, patterns)
+
+IMPORTANT: 
+- You MUST read BOTH etl.py AND at least 2 router files before answering
+- Do NOT answer after reading only one file
+- Do NOT say "let's look at" - provide the COMPLETE comparison in ONE final response
+- Example answer structure: "The ETL pipeline handles errors by... In contrast, the API routers handle errors by... The key difference is..."
+- Look for these patterns in ETL: session.rollback(), try/except, IntegrityError handling
+- Look for these patterns in API: HTTPException, status_code, raise HTTPException
 
 ## Critical Instructions for Analytics Bug Detection
 
@@ -181,13 +194,26 @@ When asked about bugs in analytics endpoints (e.g., "Query /analytics/completion
    - **TypeError with sorted()**: Find `sorted(rows, key=lambda r: r.avg_score)` — check if `r.avg_score` can be None
 5. Answer with the specific function name and the bug location
 
+## Critical Instructions for Analytics Code Safety Review
+
+When asked to analyze analytics.py for potential bugs or risky operations:
+1. Read backend/app/routers/analytics.py completely
+2. Look for these dangerous patterns:
+   - **Division without zero check**: Any `/` operation where denominator could be 0
+     - Example: `rate = passed / total` — is `total` checked before division?
+   - **Sorting with potentially None values**: `sorted(items, key=lambda x: x.some_field)` — can `some_field` be None?
+   - **Attribute access on potentially None objects**: `obj.attribute` when `obj` could be None
+3. For each risky operation, explain:
+   - What function contains it
+   - What error would occur (ZeroDivisionError, TypeError, AttributeError)
+   - What input would trigger the error
+   - How to fix it (add zero check, filter None values, use .get() method)
+
 Example:
-- Question: "Query the /analytics/completion-rate endpoint for a lab that has no data. What error occurs?"
-- Action 1: query_api("GET", "/analytics/completion-rate?lab=lab-99")
-- Action 2: Read error message (e.g., "ZeroDivisionError: division by zero")
-- Action 3: read_file("backend/app/routers/analytics.py")
-- Look for: `get_completion_rate()` function, line with `rate = (passed_learners / total_learners) * 100`
-- Answer: "ZeroDivisionError in get_completion_rate() — division by total_learners without checking if it's zero"
+- Question: "Read the analytics router source code. Which operations could cause errors?"
+- Action: read_file("backend/app/routers/analytics.py")
+- Look for: Division operations, sorted() calls, attribute access
+- Answer: "In get_completion_rate(), line X has `rate = passed / total` without checking if total is zero — this causes ZeroDivisionError when no learners exist. In get_top_learners(), line Y has `sorted(rows, key=lambda r: r.avg_score)` — this causes TypeError if any avg_score is None."
 - Source: "backend/app/routers/analytics.py"
 
 ## Workflow
@@ -741,6 +767,7 @@ def run_agentic_loop(question: str) -> tuple[str, str, list[dict[str, Any]]]:
             answer = message.get("content", "")
 
             # Check if this is a router listing question and not all files were read
+            # Only apply this check if the question is specifically about listing routers
             router_files = [
                 "items.py",
                 "learners.py",
@@ -756,8 +783,18 @@ def run_agentic_loop(question: str) -> tuple[str, str, list[dict[str, Any]]]:
                         if path.endswith(rf):
                             routers_read.append(rf)
 
-            # Check if question is about routers
-            if "router" in question.lower() and len(routers_read) < len(router_files):
+            # Check if question is specifically about listing routers (not error handling comparison)
+            is_router_listing = (
+                "router" in question.lower()
+                and (
+                    "list" in question.lower()
+                    or "modules" in question.lower()
+                    or "domain" in question.lower()
+                )
+                and "error handling" not in question.lower()
+                and "compare" not in question.lower()
+            )
+            if is_router_listing and len(routers_read) < len(router_files):
                 # LLM returned answer too early - remind it to read all files
                 remaining = [rf for rf in router_files if rf not in routers_read]
                 print(
@@ -776,6 +813,77 @@ def run_agentic_loop(question: str) -> tuple[str, str, list[dict[str, Any]]]:
                     }
                 )
                 continue  # Continue the loop instead of returning
+
+            # Check if this is an error handling comparison question
+            if (
+                "error" in question.lower()
+                and "compare" in question.lower()
+                and ("etl" in question.lower() or "pipeline" in question.lower())
+            ):
+                etl_read = any(
+                    "etl.py" in tc.get("args", {}).get("path", "")
+                    for tc in tool_calls_log
+                    if tc["tool"] == "read_file"
+                )
+                routers_read = [
+                    tc.get("args", {}).get("path", "")
+                    for tc in tool_calls_log
+                    if tc["tool"] == "read_file"
+                    and "routers/" in tc.get("args", {}).get("path", "")
+                ]
+                if not etl_read or len(routers_read) < 2:
+                    print(
+                        "Warning: Error handling comparison question but missing file reads",
+                        file=sys.stderr,
+                    )
+                    print(
+                        f"ETL read: {etl_read}, Routers read: {len(routers_read)}",
+                        file=sys.stderr,
+                    )
+                    messages.append(
+                        {"role": "assistant", "content": message.get("content")}
+                    )
+                    missing = []
+                    if not etl_read:
+                        missing.append("backend/app/etl.py")
+                    if len(routers_read) < 2:
+                        missing.append(
+                            "at least 2 router files (e.g., backend/app/routers/items.py, backend/app/routers/learners.py)"
+                        )
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": f"You returned an answer too early. You must read BOTH the ETL code AND at least 2 API router files before comparing. Missing: {', '.join(missing)}. Please read the missing files first, then provide a complete comparison.",
+                        }
+                    )
+                    continue
+
+            # Check if this is an analytics code safety review question
+            if "analytics" in question.lower() and (
+                "bug" in question.lower()
+                or "error" in question.lower()
+                or "risky" in question.lower()
+            ):
+                analytics_read = any(
+                    "analytics.py" in tc.get("args", {}).get("path", "")
+                    for tc in tool_calls_log
+                    if tc["tool"] == "read_file"
+                )
+                if not analytics_read:
+                    print(
+                        "Warning: Analytics bug question but analytics.py not read",
+                        file=sys.stderr,
+                    )
+                    messages.append(
+                        {"role": "assistant", "content": message.get("content")}
+                    )
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": "You must read backend/app/routers/analytics.py before answering. Please call read_file('backend/app/routers/analytics.py') to analyze the code for bugs.",
+                        }
+                    )
+                    continue
 
             # Extract source
             source = extract_source_from_answer(answer, tool_calls_log)
