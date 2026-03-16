@@ -70,8 +70,18 @@ If the question starts with "How many items" or "How many learners" or "count":
 If the question asks to "List all API router" or "List all modules" or "What files are in":
 → STEP 1: IMMEDIATELY call: list_files("backend/app/routers")
 → DO NOT read any files before calling list_files
-→ STEP 2: After seeing the file list, read each router file to understand its domain
-→ Answer with the list of routers and what each handles (items, learners, interactions, analytics, pipeline)
+→ STEP 2: After seeing the file list, read ALL router files (except __init__.py)
+→ STEP 3: For EACH router file, read its content to understand its domain
+→ STEP 4: Answer with the COMPLETE list of routers and what each handles
+→ DO NOT give a partial answer - you MUST read ALL router files first
+→ Typical routers: items.py (handles CRUD for items), learners.py (handles learner management), 
+   interactions.py (handles user interactions), analytics.py (handles analytics endpoints), 
+   pipeline.py (handles ETL pipeline operations)
+→ IMPORTANT: After calling list_files, you MUST call read_file for EACH .py file in the list
+   (except __init__.py). Do NOT return a final answer until you have read ALL router files.
+   If you see 6 files in the list, you should make 5 read_file calls (one for each router).
+→ WARNING: Never say "Continuing to read..." or "Let me continue..." - these are NOT final answers.
+   You must read ALL files FIRST, then provide the complete answer in ONE final response.
 
 ### Rule 4: Bug/Error Questions
 If the question mentions "error", "bug", "ZeroDivisionError", "TypeError":
@@ -130,19 +140,20 @@ Example:
 
 When asked about request flow (e.g., "Compare how the ETL pipeline handles failures vs how the API..."):
 1. Read docker-compose.yml to see service dependencies and ports
-2. Read the Caddyfile for routing rules (reverse_proxy directives)
-3. Read the backend Dockerfile for the application structure
-4. Read main.py to see the application entry point
+2. Read the Caddyfile for routing rules (reverse_proxy directives) - path: caddy/Caddyfile
+3. Read the Dockerfile for the application structure - path: Dockerfile (in project root, NOT backend/Dockerfile)
+4. Read main.py to see the application entry point - path: backend/app/main.py
 5. Trace the full path: Caddy (port 42002) -> reverse_proxy -> Backend (port 42001) -> Auth -> Router -> Database
 6. Explain each hop in the request flow
 
 Example:
-- Question: "Compare how the ETL pipeline handles failures vs how the API routers handle errors."
-- Action 1: read_file("backend/app/etl.py") — look for try/except, session.rollback(), error propagation
-- Action 2: read_file("backend/app/main.py") — look for @app.exception_handler
-- Action 3: read_file("backend/app/routers/items.py") or other routers — look for HTTPException raises
-- Compare: ETL uses transaction rollback on errors; API uses HTTPException with status codes and global exception handler
-- Source: "backend/app/etl.py, backend/app/main.py"
+- Question: "Read the docker-compose.yml and the backend Dockerfile. Explain the full journey..."
+- Action 1: read_file("docker-compose.yml") — see service dependencies
+- Action 2: read_file("caddy/Caddyfile") — see reverse_proxy rules
+- Action 3: read_file("Dockerfile") — NOTE: Dockerfile is in project root, not backend/
+- Action 4: read_file("backend/app/main.py") — see application entry point
+- Answer: Trace the full request path from browser to database
+- Source: "docker-compose.yml, caddy/Caddyfile, Dockerfile, backend/app/main.py"
 
 ## Critical Instructions for ETL/Idempotency Questions
 
@@ -480,19 +491,48 @@ def call_llm(
     print(f"Calling LLM at {url}...", file=sys.stderr)
 
     try:
-        with httpx.Client(timeout=60.0) as client:
-            response = client.post(url, headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
-    except httpx.TimeoutException:
-        print("Error: LLM API request timed out (>60 seconds)", file=sys.stderr)
-        sys.exit(1)
-    except httpx.HTTPStatusError as e:
-        print(f"Error: LLM API returned HTTP {e.response.status_code}", file=sys.stderr)
-        print(f"Response: {e.response.text}", file=sys.stderr)
-        sys.exit(1)
-    except httpx.RequestError as e:
-        print(f"Error: Failed to connect to LLM API: {e}", file=sys.stderr)
+        # Use os.system with curl instead of httpx due to Docker networking issues on Windows
+        import os
+        import json as json_module
+        import tempfile
+
+        json_payload = json_module.dumps(payload)
+
+        # Write JSON to temp file to avoid escaping issues
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write(json_payload)
+            temp_file = f.name
+
+        try:
+            # Build curl command
+            cmd = (
+                f'curl -s -X POST "{url}" '
+                f'-H "Authorization: Bearer {LLM_API_KEY}" '
+                f'-H "Content-Type: application/json" '
+                f"--connect-timeout 30 --max-time 120 "
+                f"-d @{temp_file}"
+            )
+
+            # Execute with os.system and capture output via temp file
+            output_file = temp_file + ".out"
+            os.system(f'{cmd} > "{output_file}" 2>&1')
+
+            with open(output_file, "r", encoding="utf-8") as f:
+                response_text = f.read()
+
+            os.remove(output_file)
+
+            if not response_text:
+                raise Exception("curl returned empty response")
+
+            data = json_module.loads(response_text)
+            if "error" in data:
+                raise Exception(f"API error: {data['error']}")
+        finally:
+            os.remove(temp_file)
+
+    except Exception as e:
+        print(f"Error: LLM API call failed: {e}", file=sys.stderr)
         sys.exit(1)
 
     return data
@@ -552,9 +592,9 @@ def extract_source_from_answer(
     return "wiki/unknown.md"
 
 
-def query_api(method: str, path: str, body: str = None) -> str:
+def query_api(method: str, path: str, body: str = None, omit_auth: bool = False) -> str:
     """
-    Call the deployed backend API.
+    Call the deployed backend API using curl via os.system.
 
     Args:
         method: HTTP method (GET, POST, etc.)
@@ -571,24 +611,55 @@ def query_api(method: str, path: str, body: str = None) -> str:
         return json.dumps({"status_code": 500, "body": "LMS_API_KEY not configured"})
 
     url = f"{AGENT_API_BASE_URL}{path}"
-    headers = {} if omit_auth else {"Authorization": f"Bearer {LMS_API_KEY}"}
 
     try:
-        with httpx.Client(timeout=30.0) as client:
-            if method.upper() == "GET":
-                response = client.get(url, headers=headers)
-            elif method.upper() == "POST":
-                response = client.post(
-                    url, headers=headers, json=json.loads(body) if body else None
-                )
-            else:
-                return json.dumps(
-                    {"status_code": 400, "body": f"Unsupported method: {method}"}
-                )
+        import os
+        import tempfile
 
-            return json.dumps(
-                {"status_code": response.status_code, "body": response.text}
-            )
+        # Build curl command with status code output
+        cmd = f'curl -s -w "\\n%{{http_code}}" -X {method.upper()} "{url}" --connect-timeout 30 --max-time 60'
+
+        # Add headers
+        if not omit_auth:
+            cmd += f' -H "Authorization: Bearer {LMS_API_KEY}"'
+        cmd += ' -H "Content-Type: application/json"'
+
+        # Add body for POST/PUT/PATCH
+        if method.upper() in ("POST", "PUT", "PATCH") and body:
+            # Write body to temp file to avoid escaping issues
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False
+            ) as f:
+                f.write(body)
+                temp_file = f.name
+            try:
+                cmd += f" -d @{temp_file}"
+                output_file = temp_file + ".out"
+                os.system(f'{cmd} > "{output_file}" 2>&1')
+                os.remove(temp_file)
+            finally:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+        else:
+            output_file = tempfile.mktemp(suffix=".out")
+            os.system(f'{cmd} > "{output_file}" 2>&1')
+
+        # Read output - last line is status code
+        try:
+            with open(output_file, "r", encoding="utf-8") as f:
+                lines = f.read().splitlines()
+                status_code = int(lines[-1]) if lines else 200
+                response_text = "\n".join(lines[:-1]) if len(lines) > 1 else ""
+            os.remove(output_file)
+        except FileNotFoundError:
+            status_code = 500
+            response_text = ""
+        except ValueError:
+            status_code = 500
+            response_text = ""
+
+        return json.dumps({"status_code": status_code, "body": response_text})
+
     except Exception as e:
         return json.dumps({"status_code": 500, "body": str(e)})
 
@@ -668,6 +739,43 @@ def run_agentic_loop(question: str) -> tuple[str, str, list[dict[str, Any]]]:
             # LLM returned final answer (no tool calls)
             print("LLM returned final answer", file=sys.stderr)
             answer = message.get("content", "")
+
+            # Check if this is a router listing question and not all files were read
+            router_files = [
+                "items.py",
+                "learners.py",
+                "interactions.py",
+                "analytics.py",
+                "pipeline.py",
+            ]
+            routers_read = []
+            for tc in tool_calls_log:
+                if tc["tool"] == "read_file":
+                    path = tc["args"].get("path", "")
+                    for rf in router_files:
+                        if path.endswith(rf):
+                            routers_read.append(rf)
+
+            # Check if question is about routers
+            if "router" in question.lower() and len(routers_read) < len(router_files):
+                # LLM returned answer too early - remind it to read all files
+                remaining = [rf for rf in router_files if rf not in routers_read]
+                print(
+                    f"Warning: LLM returned answer after reading only {len(routers_read)}/{len(router_files)} routers",
+                    file=sys.stderr,
+                )
+                print(f"Remaining routers: {remaining}", file=sys.stderr)
+                # Add a tool message to remind LLM to read remaining files
+                messages.append(
+                    {"role": "assistant", "content": message.get("content")}
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"You returned an answer too early. You must read ALL router files before answering. Remaining files to read: {', '.join(remaining)}. Please call read_file for each remaining router file.",
+                    }
+                )
+                continue  # Continue the loop instead of returning
 
             # Extract source
             source = extract_source_from_answer(answer, tool_calls_log)
