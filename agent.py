@@ -68,10 +68,10 @@ If the question starts with "How many items" or "How many learners" or "count":
 
 ### Rule 3: Router/File Listing Questions
 If the question asks to "List all API router" or "List all modules" or "What files are in":
-→ IMMEDIATELY call: list_files("backend/app/routers")
-→ DO NOT read files first
-→ Then read each router file to understand its purpose
-→ Answer with the list and domains
+→ STEP 1: IMMEDIATELY call: list_files("backend/app/routers")
+→ DO NOT read any files before calling list_files
+→ STEP 2: After seeing the file list, read each router file to understand its domain
+→ Answer with the list of routers and what each handles (items, learners, interactions, analytics, pipeline)
 
 ### Rule 4: Bug/Error Questions
 If the question mentions "error", "bug", "ZeroDivisionError", "TypeError":
@@ -86,6 +86,7 @@ If the question mentions "error", "bug", "ZeroDivisionError", "TypeError":
 - API status codes: "What HTTP status code..."
 - Live data: "Query /analytics/...", "Get the completion rate..."
 - Bug diagnosis: First query the endpoint to see the error, THEN read the source code
+- **Unauthenticated access**: To test what happens without authentication, use `omit_auth: true`
 
 ### Use read_file for:
 - Source code analysis: "What framework...", "Read the source code...", "Which function..."
@@ -261,7 +262,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "query_api",
-            "description": "Call the deployed backend API to get live data, check status codes, or query database",
+            "description": "Call the deployed backend API to get live data, check status codes, or query database. Use omit_auth=true to test unauthenticated access.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -276,6 +277,10 @@ TOOLS = [
                     "body": {
                         "type": "string",
                         "description": "Optional JSON request body for POST requests",
+                    },
+                    "omit_auth": {
+                        "type": "boolean",
+                        "description": "If true, omit the Authorization header to test unauthenticated access (default: false)",
                     },
                 },
                 "required": ["method", "path"],
@@ -435,6 +440,7 @@ def execute_tool(tool_name: str, args: dict[str, Any]) -> str:
             args.get("method", "GET"),
             args.get("path", ""),
             args.get("body"),
+            args.get("omit_auth", False),
         )
     else:
         return f"Error: Unknown tool: {tool_name}"
@@ -554,6 +560,7 @@ def query_api(method: str, path: str, body: str = None) -> str:
         method: HTTP method (GET, POST, etc.)
         path: API endpoint path (e.g., "/items/")
         body: Optional JSON request body for POST requests
+        omit_auth: If True, omit the Authorization header (default: False)
 
     Returns:
         JSON string with status_code and body
@@ -564,7 +571,7 @@ def query_api(method: str, path: str, body: str = None) -> str:
         return json.dumps({"status_code": 500, "body": "LMS_API_KEY not configured"})
 
     url = f"{AGENT_API_BASE_URL}{path}"
-    headers = {"Authorization": f"Bearer {LMS_API_KEY}"}
+    headers = {} if omit_auth else {"Authorization": f"Bearer {LMS_API_KEY}"}
 
     try:
         with httpx.Client(timeout=30.0) as client:
