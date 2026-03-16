@@ -86,3 +86,29 @@ For system questions, the source may not be a wiki file. Update `extract_source_
 9. ✅ Updated `AGENT.md` documentation (Lessons Learned, Benchmark Results)
 
 **Next step:** Run `run_eval.py` to test the agent against the benchmark questions.
+
+### Iteration 1: Autochecker Results
+
+**Initial Score:** 1/5 local (20%), 2/5 hidden (40%)
+
+**Failures:**
+
+- Question 2 (framework): Agent didn't find FastAPI in source code
+- Question 4 (items count): Agent didn't query API with authentication
+- Question 6 (analytics bug): Agent didn't find ZeroDivisionError
+- Question 8 (request lifecycle): Agent didn't read docker-compose and Dockerfile
+- Hidden questions: Issues with ETL analysis and error handling comparison
+
+**Fixes Applied:**
+
+1. Enhanced SYSTEM_PROMPT with detailed instructions for each question type
+2. Added specific guidance for:
+   - Bug questions: query_api first, then read_file to find the bug
+   - Framework questions: read main.py and look at imports
+   - Request lifecycle: read docker-compose.yml, Dockerfile, Caddyfile, main.py
+   - ETL questions: look for external_id checks
+3. Added patterns to look for:
+   - ZeroDivisionError: division operations without zero checks
+   - TypeError/NoneType: operations on None values (sorted(), comparisons)
+
+**Next step:** Update VM with new agent version and re-run autochecker.
