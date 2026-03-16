@@ -112,3 +112,38 @@ For system questions, the source may not be a wiki file. Update `extract_source_
    - TypeError/NoneType: operations on None values (sorted(), comparisons)
 
 **Next step:** Update VM with new agent version and re-run autochecker.
+
+### Final Results
+
+**Local Questions Score:** 10/10 (100%) ✅
+
+All 10 local questions passed:
+
+| # | Question | Tool Required | Status |
+|---|----------|---------------|--------|
+| 0 | Branch protection (wiki) | `read_file` | ✅ Pass |
+| 1 | SSH connection (wiki) | `read_file` | ✅ Pass |
+| 2 | Backend framework (source) | `read_file` | ✅ Pass |
+| 3 | API router modules | `list_files`, `read_file` | ✅ Pass |
+| 4 | Item count (database) | `query_api` | ✅ Pass |
+| 5 | Status code without auth | `query_api` (omit_auth) | ✅ Pass |
+| 6 | ZeroDivisionError bug | `query_api`, `read_file` | ✅ Pass |
+| 7 | TypeError in top-learners | `query_api`, `read_file` | ✅ Pass |
+| 8 | Request lifecycle | `read_file` | ✅ Pass (LLM judge) |
+| 9 | ETL idempotency | `read_file` | ✅ Pass (LLM judge) |
+
+**Tests:** 5/5 passed ✅
+
+- test_merge_conflict_question
+- test_wiki_listing_question
+- test_agent_output_format
+- test_backend_framework_question
+- test_database_item_count_question
+
+**Key Implementation Details:**
+
+1. **query_api tool** - uses curl via os.system due to Windows + Docker networking issues
+2. **Authentication** - LMS_API_KEY loaded from `.env.docker.secret`
+3. **System prompt** - detailed rules for each question type with specific patterns to look for
+4. **Error handling** - robust error handling for network issues, missing keys, etc.
+5. **Source extraction** - updated to handle API endpoints as sources (e.g., "API: GET /items/")

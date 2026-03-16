@@ -413,6 +413,26 @@ Running `run_eval.py` revealed several issues:
 | 16 | Analytics code safety | `read_file` | ✅ Pass (Hidden) |
 | 18 | Error handling comparison | `read_file` (multiple) | ❌ Fail (Hidden) |
 
+### Regression Tests
+
+**Score:** 5/5 passed ✅
+
+| Test | Description | Status |
+|------|-------------|--------|
+| test_merge_conflict_question | Uses `read_file` for wiki question | ✅ Pass |
+| test_wiki_listing_question | Uses `list_files` to list wiki directory | ✅ Pass |
+| test_agent_output_format | Validates JSON output structure | ✅ Pass |
+| test_backend_framework_question | Uses `read_file` to find FastAPI | ✅ Pass |
+| test_database_item_count_question | Uses `query_api` to count items | ✅ Pass |
+
+Tests located in: `tests/test_agent.py`
+
+Run tests with:
+
+```bash
+uv run pytest tests/test_agent.py -v
+```
+
 ### Key Fixes Applied
 
 1. **Syntax error:** Fixed `except OSError, ValueError:` → `except (OSError, ValueError):`
